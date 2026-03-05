@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Choco-Physics: Senna & Nuclear Science</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Arial Rounded MT Bold', sans-serif; touch-action: none; }
+        canvas { display: block; }
+        
+        /* HUD ORIGINAL IZQUIERDA */
+        #hud {
+            position: absolute; top: 20px; left: 20px; color: white;
+            background: rgba(0,0,0,0.9); padding: 20px; border-radius: 15px;
+            border: 3px solid #ffcc00; width: 420px; pointer-events: none; z-index: 10;
+        }
+
+        /* CONTENEDOR DE LA BURBUJA (DERECHA) */
+        #menu-wrapper {
+            position: absolute; top: 20px; right: 20px; z-index: 100;
+            display: flex; flex-direction: column; align-items: flex-end;
+        }
+
+        /* LA BOLA BLANCA TRANSPARENTE */
+        #burbuja-pausa {
+            width: 55px; height: 55px;
+            background: rgba(255, 255, 255, 0.15);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            display: flex; justify-content: center; align-items: center;
+            cursor: pointer; transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            backdrop-filter: blur(8px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+
+        #burbuja-pausa:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: scale(1.1);
+            border-color: rgba(255, 255, 255, 0.6);
+        }
+
+        /* Icono de pausa (dos barras) */
+        .pause-icon {
+            width: 16px; height: 22px;
+            border-left: 6px solid rgba(255, 255, 255, 0.8);
+            border-right: 6px solid rgba(255, 255, 255, 0.8);
+            display: inline-block;
+        }
+
+        /* MENÚ DESPLEGABLE (OCULTO POR DEFECTO) */
+        #menu-desplegable {
+            max-height: 0; overflow: hidden;
+            display: flex; flex-direction: column; gap: 8px;
+            margin-top: 12px; transition: max-height 0.3s ease-out;
+        }
+
+        #menu-wrapper:hover #menu-desplegable { max-height: 200px; }
+
+        .btn-game { 
+            background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.3);
+            padding: 10px 20px; cursor: pointer; font-weight: bold; border-radius: 25px; 
+            font-size: 11px; color: white; transition: 0.3s; backdrop-filter: blur(5px);
+            text-transform: uppercase; letter-spacing: 1px;
+        }
+        .btn-game:hover { background: #ffcc00; color: black; border-color: #ffcc00; }
+
+        #game-over-screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(40, 0, 0, 0.95); color: white; display: none;
+            flex-direction: column; justify-content: center; align-items: center;
+            z-index: 200; text-align: center;
+        }
+
+        #pausa-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.6); display: none; justify-content: center;
+            align-items: center; z-index: 50; color: #ffcc00; font-size: 70px;
+            font-weight: bold; pointer-events: none; letter-spacing: 10px;
+        }
+
+        .desc-fisica { color: #00f2ff; font-size: 13px; margin-top: 10px; border-top: 1px solid #444; padding-top: 10px; line-height: 1.4; }
+        #vector-info { color: #ffcc00; font-family: monospace; font-size: 11px; margin-top: 5px; }
+    </style>
+</head>
+<body>
+
+<div id="pausa-overlay">PAUSA</div>
+
+<div id="menu-wrapper">
+    <div id="burbuja-pausa" onclick="togglePausa(); sensorInit();">
+        <div class="pause-icon"></div>
+    </div>
+    <div id="menu-desplegable">
+        <button class="btn-game" onclick="guardarPartida()">Guardar</button>
+        <button class="btn-game" onclick="cargarPartida()">Cargar</button>
+    </div>
+</div>
+
+<div id="hud">
+    <div style="color:#ffcc00; font-size:11px; font-weight: bold;">SISTEMA DE ANÁLISIS FÍSICO NUCLEAR</div>
+    <h2 id="txt-nivel" style="margin:5px 0;">Nivel 1</h2>
+    <div style="display:flex; justify-content: space-between;">
+        <div id="txt-vidas" style="font-size:24px;">❤️❤️❤️</div>
+        <div id="txt-puntos" style="font-size:20px; color:#ffcc00;">Pts: 0</div>
+    </div>
+    <div id="txt-explicacion" class="desc-fisica">Recolecta Monedas S para analizar la cinemática y energía nuclear.</div>
+    <div id="vector-info">Vx: 0.00 | Vy: 0.00 | Dinámica: Estable</div>
+</div>
+
+<div id="game-over-screen">
+    <h1 style="font-size: 90px; margin: 0; color: #ffcc00;">GAME OVER</h1>
+    <p style="font-size: 40px; margin: 10px 0;">HAHAHA!</p>
+    <button onclick="location.reload()" style="padding:15px 40px; font-size:20px; cursor:pointer; background:#ffcc00; border:none; border-radius:8px; font-weight:bold;">REINTENTAR</button>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<script>
+/**
+ * CHOCO-PHYSICS ADVENTURE - MOTOR DE JUEGO
+ * Desarrollado para simulación de físicas y aprendizaje nuclear.
+ */
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+/**
+ * GESTIÓN DE PANTALLA
+ */
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+/**
+ * ESTADO GLOBAL DEL JUEGO
+ */
+let audioCtx, nAct = 0, camX = 0, vidas = 3, puntos = 0;
+let choco = { x: 200, y: 400, vx: 0, vy: 0, ang: 0, r: 28, vivo: true };
+let nubes = [], decor = [], pinchos = [], corazones = [], estrellas = [], cascos = [], monedasS = [];
+let teclas = {};
+let pausado = false;
+let inclinacionX = 0; 
+
+/**
+ * BASE DE DATOS DE INFORMACIÓN FÍSICA
+ */
+const infoFisica = [
+    "NUCLEAR: La fisión de U-235 libera 200 MeV por núcleo.",
+    "CINEMÁTICA: La velocidad es la derivada de la posición (v = dx/dt).",
+    "DINÁMICA: F = m*a. La fuerza resultante genera aceleración.",
+    "NUCLEAR: E=mc². La masa se transforma en energía pura.",
+    "AERODINÁMICA F1: El McLaren MP4/4 de Senna usaba efecto suelo.",
+    "F1: El downforce aumenta el agarre lateral en curvas."
+];
+
+/**
+ * DEFINICIÓN DE NIVELES (10 NIVELES)
+ */
+const niveles = Array.from({length: 10}, (_, i) => ({
+    nom: i === 5 ? "PRUEBA AERODINÁMICA: McLaren MP4/4" : (i === 2 ? "Mónaco: Energía Nuclear" : `Nivel ${i + 1}`),
+    color: i % 2 === 0 ? ["#87CEEB", "#B2EBF2"] : ["#0f0c29", "#302b63"],
+    sColor: i === 5 ? "#333" : (i % 2 === 0 ? "#2e7d32" : "#111"),
+    decor: (i === 2 || i === 5 || i % 2 !== 0) ? "EDIFICIO" : "ARBOL",
+    noche: i % 2 !== 0 || i === 2,
+    dificultad: i === 5 ? 0 : 1 + (i * 0.4) 
+}));
+
+/**
+ * SISTEMA DE SENSORES PARA MÓVIL
+ */
+function sensorInit() {
+    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        DeviceOrientationEvent.requestPermission()
+            .then(response => {
+                if (response == 'granted') {
+                    window.addEventListener('deviceorientation', handleOrientation);
+                }
+            }).catch(error => {
+                console.error("Error solicitando permisos de sensor:", error);
+            });
+    } else {
+        window.addEventListener('deviceorientation', handleOrientation);
+    }
+}
+
+/**
+ * PROCESAMIENTO DE ORIENTACIÓN
+ */
+function handleOrientation(e) {
+    let orient = window.orientation || 0;
+    // Ajuste según rotación de pantalla
+    if(orient === 90) inclinacionX = e.beta / 15;
+    else if(orient === -90) inclinacionX = -e.beta / 15;
+    else inclinacionX = e.gamma / 15;
+}
+
+/**
+ * SISTEMA DE PAUSA
+ */
+function togglePausa() {
+    pausado = !pausado;
+    const overlay = document.getElementById('pausa-overlay');
+    overlay.style.display = pausado ? 'flex' : 'none';
+}
+
+/**
+ * PERSISTENCIA DE DATOS
+ */
+function guardarPartida() {
+    try {
+        const datos = { nAct, vidas, puntos, timestamp: Date.now() };
+        localStorage.setItem('chocoSave', JSON.stringify(datos));
+        alert("Partida Guardada con éxito");
+    } catch (e) {
+        console.error("No se pudo guardar la partida", e);
+    }
+}
+
+function cargarPartida() {
+    const guardado = localStorage.getItem('chocoSave');
+    if(guardado) {
+        const datos = JSON.parse(guardado);
+        nAct = datos.nAct; 
+        vidas = datos.vidas; 
+        puntos = datos.puntos;
+        initNivel();
+        if(pausado) togglePausa();
+        alert("Cargando progreso del Ingeniero...");
+    } else {
+        alert("No hay registros previos en el sistema.");
+    }
+}
+
+/**
+ * MOTOR DE AUDIO
+ */
+function initAudio() { 
+    if(!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+}
+
+/**
+ * EFECTO SONORO DE DERROTA
+ */
+function risaBurlona() { 
+    if(!audioCtx) return; 
+    let t = audioCtx.currentTime;
+    const frecuencias = [400, 550, 400, 550];
+    
+    frecuencias.forEach((f, i) => {
+        let o = audioCtx.createOscillator(); 
+        let g = audioCtx.createGain();
+        o.type = 'sawtooth'; 
+        o.frequency.setValueAtTime(f, t + i*0.1);
+        o.connect(g); 
+        g.connect(audioCtx.destination);
+        g.gain.setValueAtTime(0.1, t + i*0.1); 
+        g.gain.exponentialRampToValueAtTime(0.001, t + i*0.1 + 0.2);
+        o.start(t + i*0.1); 
+        o.stop(t + i*0.1 + 0.2);
+    });
+}
+
+/**
+ * GENERACIÓN DINÁMICA DE NIVELES
+ */
+function initNivel() {
+    if (nAct >= 10) { 
+        alert("¡INGENIERO NUCLEAR SUPREMO! Has completado los 10 niveles."); 
+        location.reload(); 
+        return; 
+    }
+    
+    let lvl = niveles[nAct];
+    choco.x = 200; 
+    choco.y = 400; 
+    choco.vx = 0; 
+    choco.vy = 0; 
+    choco.vivo = true;
+    camX = 0; 
+    
+    // Limpieza de objetos
+    nubes = []; decor = []; pinchos = []; corazones = []; estrellas = []; cascos = []; monedasS = [];
+    
+    // Generar fondo estelar si es de noche
+    if(lvl.noche) {
+        for(let i=0; i<60; i++) {
+            estrellas.push({x: Math.random()*6000, y: Math.random()*400, r: Math.random()*2});
+        }
+    }
+    
+    // Generar ambientación
+    for(let i=0; i<15; i++) {
+        nubes.push({ 
+            x: i*800, 
+            y: 50+Math.random()*150, 
+            s: 3, 
+            t: Math.random() > 0.5 ? 'BLANCA' : 'CORAZON' 
+        });
+        decor.push({ x: i*800 + Math.random()*200, t: lvl.decor });
+    }
+
+    // Generar desafíos y recompensas
+    if (lvl.dificultad > 0) {
+        let cantidad = 10 * lvl.dificultad;
+        for(let i=0; i<cantidad; i++) {
+            corazones.push({ x: 800+i*(500/lvl.dificultad), y: canvas.height-180, activa: true });
+            if(i%2===0) monedasS.push({ x: 1000+i*(600/lvl.dificultad), y: canvas.height-320, activa: true });
+            if(i%3===0) cascos.push({ x: 1200+i*(700/lvl.dificultad), y: canvas.height-240, activa: true });
+            pinchos.push({ x: 1400+i*(400/lvl.dificultad), y: canvas.height-100 });
+        }
+    }
+}
+
+/**
+ * FUNCIONES DE DIBUJO DETALLADO
+ */
+function drawNube(n) {
+    ctx.globalAlpha = 0.6;
+    let s = n.s;
+    if(n.t === 'BLANCA') {
+        ctx.fillStyle = "white";
+        ctx.fillRect(n.x, n.y, 60*s, 20*s); 
+        ctx.fillRect(n.x+10*s, n.y-15*s, 40*s, 20*s);
+    } else { 
+        ctx.fillStyle = "#FF00FF";
+        ctx.fillRect(n.x+10*s, n.y, 10*s, 10*s); 
+        ctx.fillRect(n.x+30*s, n.y, 10*s, 10*s);
+        ctx.fillRect(n.x, n.y+10*s, 50*s, 20*s); 
+        ctx.fillRect(n.x+10*s, n.y+30*s, 30*s, 10*s);
+        ctx.fillRect(n.x+20*s, n.y+40*s, 10*s, 10*s);
+    }
+    ctx.globalAlpha = 1;
+}
+
+function drawSennaHelmet(x, y) {
+    ctx.fillStyle = "#FFD700"; 
+    ctx.beginPath(); 
+    ctx.ellipse(x, y, 26, 20, 0, 0, 7); 
+    ctx.fill();
+    ctx.strokeStyle="black"; 
+    ctx.lineWidth=2; 
+    ctx.stroke();
+    ctx.fillStyle = "#008000"; ctx.fillRect(x-18, y-12, 36, 5);
+    ctx.fillStyle = "#0000FF"; ctx.fillRect(x-18, y-4, 40, 5);
+    ctx.fillStyle = "#111"; ctx.beginPath(); ctx.roundRect(x+3, y-8, 22, 12, 3); ctx.fill();
+}
+
+function drawMonacoTunnel(x, y) {
+    ctx.fillStyle = "#222"; ctx.beginPath(); ctx.roundRect(x, y, 260, 200, [50, 50, 0, 0]); ctx.fill();
+    ctx.strokeStyle = "#00f2ff"; ctx.lineWidth = 4;
+    for(let i=0; i<3; i++) { 
+        ctx.strokeRect(x+30 + i*80, y+10, 40, 10); 
+    }
+}
+
+function drawMcLaren(x, y) {
+    ctx.save();
+    // Chasis principal
+    ctx.fillStyle = "white"; ctx.fillRect(-45, -5, 90, 12);
+    ctx.fillStyle = "#ff0000"; ctx.fillRect(15, -5, 30, 12); ctx.fillRect(-45, -5, 15, 12);
+    // Alerón trasero
+    ctx.fillStyle = "white"; ctx.fillRect(-48, -25, 12, 22);
+    ctx.fillStyle = "#ff0000"; ctx.fillRect(-48, -25, 12, 5);
+    // Ruedas
+    ctx.fillStyle = "#111"; ctx.beginPath(); ctx.arc(-28, 12, 14, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(28, 12, 14, 0, 7); ctx.fill();
+    // Casco del piloto
+    ctx.fillStyle = "yellow"; ctx.beginPath(); ctx.arc(0, -10, 9, 0, 7); ctx.fill();
+    ctx.restore();
+}
+
+/**
+ * ACTUALIZACIÓN DE FÍSICAS (UPDATE)
+ */
+function update() {
+    if(!choco.vivo || pausado) return;
+
+    // INTEGRACIÓN DE CONTROLES (TECLADO + SENSOR)
+    let moveLeft = teclas['ArrowLeft'] || teclas['KeyA'] || inclinacionX < -0.4;
+    let moveRight = teclas['ArrowRight'] || teclas['KeyD'] || inclinacionX > 0.4;
+    let jump = teclas['Space'] || teclas['KeyW'] || teclas['TOUCH_JUMP'];
+
+    if(moveRight) { choco.vx += 0.6; choco.ang += 0.15; }
+    if(moveLeft) { choco.vx -= 0.6; choco.ang -= 0.15; }
+    if(jump && choco.vy === 0) { 
+        choco.vy = -17; 
+        teclas['TOUCH_JUMP'] = false; 
+    }
+    
+    // Aplicar Rozamiento y Gravedad
+    choco.vx *= 0.96; 
+    choco.vy += 0.85; 
+    choco.x += choco.vx; 
+    choco.y += choco.vy;
+    
+    // Suelo dinámico según altura del canvas
+    if(choco.y > canvas.height-128) { 
+        choco.y = canvas.height-128; 
+        choco.vy = 0; 
+    }
+    
+    // Cámara suave
+    camX += (choco.x - 400 - camX) * 0.05;
+
+    // HUD de vectores
+    const dinLabel = Math.abs(choco.vx) > 0.1 ? 'Cinética' : 'Estática';
+    document.getElementById('vector-info').innerText = `Vx: ${choco.vx.toFixed(2)} | Vy: ${choco.vy.toFixed(2)} | Dinámica: ${dinLabel}`;
+
+    // Colisiones con items
+    corazones.forEach(h => { if(h.activa && Math.hypot(choco.x-h.x, choco.y-h.y) < 50) { h.activa=false; puntos+=100; } });
+    cascos.forEach(c => { if(c.activa && Math.hypot(choco.x-c.x, choco.y-c.y) < 50) { c.activa=false; if(vidas<3) vidas++; puntos+=500; } });
+    monedasS.forEach(m => { 
+        if(m.activa && Math.hypot(choco.x-m.x, choco.y-m.y) < 45) { 
+            m.activa=false; puntos+=1000; 
+            document.getElementById('txt-explicacion').innerText = infoFisica[Math.floor(Math.random()*infoFisica.length)];
+        } 
+    });
+
+    // Colisiones con peligros
+    pinchos.forEach(p => { 
+        if(choco.x > p.x && choco.x < p.x+70 && choco.y > p.y-70) { 
+            choco.vivo = false; 
+            vidas--; 
+            risaBurlona();
+            if(vidas > 0) {
+                setTimeout(initNivel, 1500);
+            } else {
+                document.getElementById('game-over-screen').style.display = 'flex';
+            }
+        } 
+    });
+
+    // Meta del nivel
+    if(choco.x > 6100) { 
+        nAct++; 
+        initNivel(); 
+    }
+}
+
+/**
+ * GESTIÓN DE EVENTOS DE ENTRADA
+ */
+window.onkeydown = e => { 
+    if(e.code === 'KeyP') togglePausa();
+    teclas[e.code] = true; 
+    initAudio(); 
+};
+
+window.onkeyup = e => teclas[e.code] = false;
+
+window.ontouchstart = e => {
+    initAudio();
+    sensorInit();
+    let tx = e.touches[0].clientX;
+    // Zona de salto (toda la pantalla menos la burbuja de pausa)
+    if (tx < window.innerWidth - 80) {
+        teclas['TOUCH_JUMP'] = true;
+    }
+};
+
+window.ontouchend = e => { 
+    teclas['TOUCH_JUMP'] = false; 
+};
+
+/**
+ * BUCLE PRINCIPAL DE RENDERIZADO (DRAW)
+ */
+function draw() {
+    let lvl = niveles[nAct];
+    
+    // Fondo
+    ctx.fillStyle = lvl.color[0]; 
+    ctx.fillRect(0,0,canvas.width, canvas.height);
+    
+    ctx.save(); 
+    ctx.translate(-camX, 0);
+    
+    // Estrellas
+    if(lvl.noche) { 
+        ctx.fillStyle="white"; 
+        estrellas.forEach(s => ctx.fillRect(s.x, s.y, s.r, s.r)); 
+    }
+    
+    // Nubes
+    nubes.forEach(drawNube);
+    
+    // Suelo
+    ctx.fillStyle = lvl.sColor; 
+    ctx.fillRect(0, canvas.height-100, 7000, 100);
+    
+    // Decoración
+    decor.forEach(d => {
+        if(d.t === "EDIFICIO") { 
+            ctx.fillStyle="#2c3e50"; 
+            ctx.fillRect(d.x, canvas.height-320, 70, 220); 
+            ctx.fillStyle="yellow"; 
+            ctx.fillRect(d.x+15, canvas.height-300, 10, 10); 
+            ctx.fillRect(d.x+45, canvas.height-260, 10, 10);
+        } else {
+            ctx.fillStyle="#5d4037"; 
+            ctx.fillRect(d.x, canvas.height-140, 15, 40); 
+            ctx.fillStyle="#2e7d32"; 
+            ctx.beginPath(); 
+            ctx.arc(d.x+7, canvas.height-155, 30, 0, 7); 
+            ctx.fill();
+        }
+    });
+
+    drawMonacoTunnel(5700, canvas.height-300);
+    
+    // Entidades
+    corazones.forEach(h => { if(h.activa) { ctx.font="35px Arial"; ctx.fillText("💗", h.x-20, h.y+15); }});
+    cascos.forEach(c => { if(c.activa) drawSennaHelmet(c.x, c.y); });
+    monedasS.forEach(m => { 
+        if(m.activa) { 
+            ctx.fillStyle="#ffcc00"; ctx.beginPath(); ctx.arc(m.x, m.y, 22, 0, 7); ctx.fill(); 
+            ctx.fillStyle="#000"; ctx.font="bold 20px Arial"; ctx.fillText("S", m.x-7, m.y+7); 
+        }
+    });
+    pinchos.forEach(p => { 
+        ctx.fillStyle="#555"; ctx.beginPath(); 
+        ctx.moveTo(p.x, p.y); ctx.lineTo(p.x+35, p.y-75); ctx.lineTo(p.x+70, p.y); ctx.fill(); 
+    });
+
+    // Renderizado del Personaje (Choco)
+    ctx.save(); 
+    ctx.translate(choco.x, choco.y);
+    
+    if(nAct === 5) {
+        drawMcLaren(0, 0);
+    } else {
+        ctx.rotate(choco.ang);
+        let cg = ctx.createRadialGradient(-5,-5,2,0,0,28); 
+        cg.addColorStop(0,"#8d6e63"); 
+        cg.addColorStop(0.7, "#5d4037"); 
+        cg.addColorStop(1,"#3e2723");
+        
+        ctx.fillStyle=cg; 
+        ctx.beginPath(); 
+        ctx.arc(0,0,choco.r,0,7); 
+        ctx.fill();
+        
+        // Ojos
+        ctx.fillStyle="white"; ctx.beginPath(); ctx.arc(-11,-7, 9, 0, 7); ctx.fill(); ctx.beginPath(); ctx.arc(11,-7, 9, 0, 7); ctx.fill();
+        ctx.fillStyle="black"; ctx.beginPath(); ctx.arc(-11,-5, 3.5, 0, 7); ctx.fill(); ctx.beginPath(); ctx.arc(11,-5, 3.5, 0, 7); ctx.fill();
+        
+        // Sonrisa
+        ctx.strokeStyle="black"; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(0,8,12,0.2,2.9); ctx.stroke();
+    }
+    
+    ctx.restore();
+    ctx.restore();
+
+    // Actualizar Lógica y HUD
+    update();
+    document.getElementById('txt-nivel').innerText = lvl.nom;
+    document.getElementById('txt-vidas').innerText = "❤️".repeat(vidas);
+    document.getElementById('txt-puntos').innerText = "Pts: " + puntos;
+    
+    requestAnimationFrame(draw);
+}
+
+/**
+ * INICIO DEL SISTEMA
+ */
+initNivel(); 
+draw();
+</script>
+</body>
+</html>
